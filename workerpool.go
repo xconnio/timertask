@@ -1,6 +1,7 @@
 package workerpool
 
 import (
+	"container/heap"
 	"log"
 	"sync"
 	"time"
@@ -11,57 +12,109 @@ type Client interface {
 	PingInterval() time.Duration
 }
 
-type PingManager interface {
-	Register(client Client)
-	Unregister(client Client)
-	Start()
+type ClientWrapper struct {
+	Client
+	NextPing time.Time
+	Index    int
 }
 
-type Manager struct {
-	clients map[Client]time.Time
-	mutex   sync.Mutex
+type ClientHeap []*ClientWrapper
+
+func (h ClientHeap) Len() int {
+	return len(h)
 }
 
-func NewManager() *Manager {
-	return &Manager{
-		clients: make(map[Client]time.Time),
+func (h ClientHeap) Less(i, j int) bool {
+	return h[i].NextPing.Before(h[j].NextPing)
+}
+
+func (h ClientHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+	h[i].Index, h[j].Index = i, j
+}
+
+// Push adds a client to the heap
+func (h *ClientHeap) Push(x interface{}) {
+	n := len(*h)
+	client := x.(*ClientWrapper)
+	client.Index = n
+	*h = append(*h, client)
+}
+
+// Pop removes and returns the last client in the heap
+func (h *ClientHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	client := old[n-1]
+	client.Index = -1
+	*h = old[0 : n-1]
+	return client
+}
+
+type PingManager struct {
+	clients   ClientHeap
+	clientMap map[Client]int
+	mutex     sync.Mutex
+}
+
+func NewPingManager() *PingManager {
+	return &PingManager{
+		clients:   make(ClientHeap, 0),
+		clientMap: make(map[Client]int),
 	}
 }
 
-func (m *Manager) Register(client Client) {
+func (m *PingManager) Add(client Client) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	m.clients[client] = time.Now()
+	wrappedClient := &ClientWrapper{
+		Client:   client,
+		NextPing: time.Now().Add(client.PingInterval()),
+	}
+	heap.Push(&m.clients, wrappedClient)
+	m.clientMap[client] = wrappedClient.Index
 }
 
-func (m *Manager) Unregister(client Client) {
+func (m *PingManager) Remove(client Client) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	delete(m.clients, client)
+	index, ok := m.clientMap[client]
+	if ok {
+		heap.Remove(&m.clients, index)
+		delete(m.clientMap, client)
+	}
 }
 
-func (m *Manager) Start() {
+func (m *PingManager) Start() {
 	go func() {
 		for {
-			m.pingClients()
-			time.Sleep(1 * time.Second)
+			m.mutex.Lock()
+			if len(m.clients) == 0 {
+				m.mutex.Unlock()
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			nextClient := m.clients[0]
+			waitTime := time.Until(nextClient.NextPing)
+			m.mutex.Unlock()
+
+			if waitTime > 0 {
+				time.Sleep(waitTime)
+			}
+
+			m.mutex.Lock()
+			if time.Now().After(nextClient.NextPing) {
+				err := nextClient.WriteMessage([]byte("ping"))
+				if err != nil {
+					log.Printf("error pinging client: %v", err)
+					m.Remove(nextClient.Client)
+				} else {
+					nextClient.NextPing = time.Now().Add(nextClient.Client.PingInterval())
+					heap.Fix(&m.clients, 0)
+				}
+			}
+			m.mutex.Unlock()
 		}
 	}()
-}
-
-func (m *Manager) pingClients() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	for client, lastActive := range m.clients {
-		if time.Since(lastActive) > client.PingInterval() {
-			err := client.WriteMessage([]byte("ping"))
-			if err != nil {
-				log.Printf("error pinging client: %v", err)
-				m.Unregister(client)
-			} else {
-				m.clients[client] = time.Now()
-			}
-		}
-	}
 }
