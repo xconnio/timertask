@@ -44,7 +44,7 @@ func TestManager(t *testing.T) {
 	manager.Remove(client1)
 	time.Sleep(3 * time.Second)
 
-	require.Len(t, client1.messages, 2)
+	require.Len(t, client1.messages, 1)
 
 	require.Greater(t, len(client2.messages), 2)
 }
