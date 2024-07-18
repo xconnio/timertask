@@ -13,7 +13,7 @@ type mockClient struct {
 	messages []string
 }
 
-func (c *mockClient) WriteMessage(data []byte) error {
+func (c *mockClient) Write(data []byte) error {
 	c.messages = append(c.messages, string(data))
 	return nil
 }

@@ -7,7 +7,7 @@ import (
 )
 
 type Client interface {
-	WriteMessage(data []byte) error
+	Write(data []byte) error
 }
 
 type PingManager struct {
@@ -86,7 +86,7 @@ func (m *PingManager) Start() {
 			clients, ok := m.clients[nowSeconds]
 			if ok {
 				for client, interval := range clients {
-					err := client.WriteMessage([]byte("ping"))
+					err := client.Write([]byte("ping"))
 					if err != nil {
 						log.Printf("error pinging client: %v", err)
 						m.Remove(client)
