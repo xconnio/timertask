@@ -10,7 +10,6 @@ import (
 )
 
 type mockClient struct {
-	interval time.Duration
 	messages []string
 }
 
@@ -19,18 +18,14 @@ func (c *mockClient) WriteMessage(data []byte) error {
 	return nil
 }
 
-func (c *mockClient) PingInterval() time.Duration {
-	return c.interval
-}
-
 func TestManager(t *testing.T) {
 	manager := workerpool.NewPingManager()
 
-	client1 := &mockClient{interval: 2 * time.Second}
-	client2 := &mockClient{interval: 1 * time.Second}
+	client1 := &mockClient{}
+	client2 := &mockClient{}
 
-	manager.Add(client1)
-	manager.Add(client2)
+	manager.Add(client1, 2*time.Second)
+	manager.Add(client2, 1*time.Second)
 
 	go manager.Start()
 
