@@ -12,7 +12,7 @@ type Client interface {
 }
 
 type PingManager struct {
-	clients       map[int64][]Client
+	clients       map[int64]map[Client]Client
 	clientPingMap map[Client]int64
 	mutex         sync.Mutex
 }
@@ -20,7 +20,7 @@ type PingManager struct {
 // NewPingManager creates a new PingManager instance.
 func NewPingManager() *PingManager {
 	return &PingManager{
-		clients:       make(map[int64][]Client),
+		clients:       make(map[int64]map[Client]Client),
 		clientPingMap: make(map[Client]int64),
 	}
 }
@@ -32,8 +32,11 @@ func (m *PingManager) Add(client Client) {
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+	if m.clients[timeToPing] == nil {
+		m.clients[timeToPing] = make(map[Client]Client)
+	}
 
-	m.clients[timeToPing] = append(m.clients[timeToPing], client)
+	m.clients[timeToPing][client] = client
 	m.clientPingMap[client] = timeToPing
 }
 
@@ -45,10 +48,10 @@ func (m *PingManager) Remove(client Client) {
 	timeToPing, ok := m.clientPingMap[client]
 	if ok {
 		clients := m.clients[timeToPing]
-		for i, c := range clients {
+		for _, c := range clients {
 			if c == client {
-				// Remove the client from the list
-				m.clients[timeToPing] = append(clients[:i], clients[i+1:]...)
+				// Remove the client from the map
+				delete(clients, m.clients[timeToPing][client])
 				break
 			}
 		}
@@ -76,7 +79,10 @@ func (m *PingManager) Start() {
 
 					// Reschedule the next ping for the client
 					timeToPing := time.Now().Add(client.PingInterval()).Unix()
-					m.clients[timeToPing] = append(m.clients[timeToPing], client)
+					if m.clients[timeToPing] == nil {
+						m.clients[timeToPing] = make(map[Client]Client)
+					}
+					m.clients[timeToPing][client] = client
 					m.clientPingMap[client] = timeToPing
 
 				}
