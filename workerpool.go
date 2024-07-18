@@ -10,8 +10,13 @@ type Client interface {
 	Write(data []byte) error
 }
 
+type pingConfig struct {
+	interval time.Duration
+	dataFunc func() []byte
+}
+
 type PingManager struct {
-	clients       map[int64]map[Client]time.Duration
+	clients       map[int64]map[Client]pingConfig
 	clientPingMap map[Client]int64
 	mutex         sync.Mutex
 }
@@ -19,23 +24,26 @@ type PingManager struct {
 // NewPingManager creates a new PingManager instance.
 func NewPingManager() *PingManager {
 	return &PingManager{
-		clients:       make(map[int64]map[Client]time.Duration),
+		clients:       make(map[int64]map[Client]pingConfig),
 		clientPingMap: make(map[Client]int64),
 	}
 }
 
 // Add registers a client to be pinged.
-func (m *PingManager) Add(client Client, pingInterval time.Duration) {
+func (m *PingManager) Add(client Client, pingInterval time.Duration, dataFunc func() []byte) {
 	// Calculate the next ping time in seconds
 	timeToPing := time.Now().Add(pingInterval).Unix()
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if m.clients[timeToPing] == nil {
-		m.clients[timeToPing] = make(map[Client]time.Duration)
+		m.clients[timeToPing] = make(map[Client]pingConfig)
 	}
 
-	m.clients[timeToPing][client] = pingInterval
+	m.clients[timeToPing][client] = pingConfig{
+		interval: pingInterval,
+		dataFunc: dataFunc,
+	}
 	m.clientPingMap[client] = timeToPing
 }
 
@@ -61,17 +69,17 @@ func (m *PingManager) Reset(client Client) {
 
 	nextPingTime, ok := m.clientPingMap[client]
 	if ok {
-		pingInterval := m.clients[nextPingTime][client]
+		pingInfo := m.clients[nextPingTime][client]
 		delete(m.clients[nextPingTime], client)
 		if len(m.clients[nextPingTime]) == 0 {
 			delete(m.clients, nextPingTime)
 		}
 
-		newPingTime := time.Now().Add(pingInterval).Unix()
+		newPingTime := time.Now().Add(pingInfo.interval).Unix()
 		if m.clients[newPingTime] == nil {
-			m.clients[newPingTime] = make(map[Client]time.Duration)
+			m.clients[newPingTime] = make(map[Client]pingConfig)
 		}
-		m.clients[newPingTime][client] = pingInterval
+		m.clients[newPingTime][client] = pingInfo
 		m.clientPingMap[client] = newPingTime
 	}
 }
@@ -85,8 +93,8 @@ func (m *PingManager) Start() {
 			m.mutex.Lock()
 			clients, ok := m.clients[nowSeconds]
 			if ok {
-				for client, interval := range clients {
-					err := client.Write([]byte("ping"))
+				for client, pingCfg := range clients {
+					err := client.Write(pingCfg.dataFunc())
 					if err != nil {
 						log.Printf("error pinging client: %v", err)
 						m.Remove(client)
@@ -94,11 +102,11 @@ func (m *PingManager) Start() {
 					}
 
 					// Reschedule the next ping for the client
-					timeToPing := time.Now().Add(interval).Unix()
+					timeToPing := time.Now().Add(pingCfg.interval).Unix()
 					if m.clients[timeToPing] == nil {
-						m.clients[timeToPing] = make(map[Client]time.Duration)
+						m.clients[timeToPing] = make(map[Client]pingConfig)
 					}
-					m.clients[timeToPing][client] = interval
+					m.clients[timeToPing][client] = pingCfg
 					m.clientPingMap[client] = timeToPing
 
 				}

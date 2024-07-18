@@ -24,8 +24,12 @@ func TestManager(t *testing.T) {
 	client1 := &mockClient{}
 	client2 := &mockClient{}
 
-	manager.Add(client1, 2*time.Second)
-	manager.Add(client2, 1*time.Second)
+	manager.Add(client1, 2*time.Second, func() []byte {
+		return []byte("ping")
+	})
+	manager.Add(client2, 1*time.Second, func() []byte {
+		return []byte("ping")
+	})
 
 	go manager.Start()
 
@@ -48,7 +52,9 @@ func TestManagerReset(t *testing.T) {
 	manager := workerpool.NewPingManager()
 
 	client1 := &mockClient{}
-	manager.Add(client1, 2*time.Second)
+	manager.Add(client1, 2*time.Second, func() []byte {
+		return []byte("ping")
+	})
 
 	go manager.Start()
 
