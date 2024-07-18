@@ -43,3 +43,27 @@ func TestManager(t *testing.T) {
 
 	require.Greater(t, len(client2.messages), 2)
 }
+
+func TestManagerReset(t *testing.T) {
+	manager := workerpool.NewPingManager()
+
+	client1 := &mockClient{}
+	manager.Add(client1, 2*time.Second)
+
+	go manager.Start()
+
+	// Wait for first ping
+	time.Sleep(3 * time.Second)
+	require.Len(t, client1.messages, 1)
+
+	time.Sleep(1 * time.Second)
+	// Reset client1 and check pings
+	manager.Reset(client1)
+
+	time.Sleep(1 * time.Second)
+	require.Len(t, client1.messages, 1)
+
+	// Wait for another ping after reset
+	time.Sleep(2 * time.Second)
+	require.Len(t, client1.messages, 2)
+}

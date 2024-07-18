@@ -47,7 +47,32 @@ func (m *PingManager) Remove(client Client) {
 	nextPingTime, ok := m.clientPingMap[client]
 	if ok {
 		delete(m.clients[nextPingTime], client)
+		if len(m.clients[nextPingTime]) == 0 {
+			delete(m.clients, nextPingTime)
+		}
 		delete(m.clientPingMap, client)
+	}
+}
+
+// Reset reschedules the ping for a specific client.
+func (m *PingManager) Reset(client Client) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	nextPingTime, ok := m.clientPingMap[client]
+	if ok {
+		pingInterval := m.clients[nextPingTime][client]
+		delete(m.clients[nextPingTime], client)
+		if len(m.clients[nextPingTime]) == 0 {
+			delete(m.clients, nextPingTime)
+		}
+
+		newPingTime := time.Now().Add(pingInterval).Unix()
+		if m.clients[newPingTime] == nil {
+			m.clients[newPingTime] = make(map[Client]time.Duration)
+		}
+		m.clients[newPingTime][client] = pingInterval
+		m.clientPingMap[client] = newPingTime
 	}
 }
 
