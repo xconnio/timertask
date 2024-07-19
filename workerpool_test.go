@@ -1,4 +1,4 @@
-package workerpool_test
+package timertask_test
 
 import (
 	"testing"
@@ -6,20 +6,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/xconnio/workerpool"
+	"github.com/xconnio/timertask"
 )
 
-func TestManager(t *testing.T) {
-	manager := workerpool.NewWorkerPool()
+func TestManager_Schedule(t *testing.T) {
+	manager := timertask.NewManager()
 
 	messages1 := 0
-	manager.Add(1, 2*time.Second, func() error {
+	manager.Schedule(1, 2*time.Second, func() error {
 		messages1++
 		return nil
 	})
 
 	messages2 := 0
-	manager.Add(2, 1*time.Second, func() error {
+	manager.Schedule(2, 1*time.Second, func() error {
 		messages2++
 		return nil
 	})
@@ -32,8 +32,8 @@ func TestManager(t *testing.T) {
 	require.NotZero(t, messages1)
 	require.NotZero(t, messages2)
 
-	// Remove worker1 and check
-	manager.Remove(1)
+	// Cancel worker1 and check
+	manager.Cancel(1)
 	time.Sleep(3 * time.Second)
 
 	require.Equal(t, messages1, 1)
@@ -41,16 +41,16 @@ func TestManager(t *testing.T) {
 	require.Greater(t, messages2, 2)
 }
 
-func TestManagerReset(t *testing.T) {
-	manager := workerpool.NewWorkerPool()
+func TestManager_Reset(t *testing.T) {
+	manager := timertask.NewManager()
 
 	messages := 0
-	manager.Add(1, 2*time.Second, func() error {
+	manager.Schedule(1, 2*time.Second, func() error {
 		messages++
 		return nil
 	})
 
-	go manager.Start()
+	manager.Start()
 
 	// Wait for first work
 	time.Sleep(3 * time.Second)
