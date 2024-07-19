@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-type wpConfig struct {
+type taskConfig struct {
 	interval time.Duration
 	callback func() error
 }
 
 type Manager struct {
-	workers            map[int64]map[int64]wpConfig
+	workers            map[int64]map[int64]taskConfig
 	workersByIntervals map[int64]int64
 	mutex              sync.Mutex
 }
@@ -20,7 +20,7 @@ type Manager struct {
 // NewManager creates a new Manager instance.
 func NewManager() *Manager {
 	return &Manager{
-		workers:            make(map[int64]map[int64]wpConfig),
+		workers:            make(map[int64]map[int64]taskConfig),
 		workersByIntervals: make(map[int64]int64),
 	}
 }
@@ -33,10 +33,10 @@ func (m *Manager) Schedule(id int64, interval time.Duration, callback func() err
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if m.workers[timeToWork] == nil {
-		m.workers[timeToWork] = make(map[int64]wpConfig)
+		m.workers[timeToWork] = make(map[int64]taskConfig)
 	}
 
-	m.workers[timeToWork][id] = wpConfig{
+	m.workers[timeToWork][id] = taskConfig{
 		interval: interval,
 		callback: callback,
 	}
@@ -73,7 +73,7 @@ func (m *Manager) Reset(id int64) {
 
 		newTime := time.Now().Add(wpCfg.interval).Unix()
 		if m.workers[newTime] == nil {
-			m.workers[newTime] = make(map[int64]wpConfig)
+			m.workers[newTime] = make(map[int64]taskConfig)
 		}
 		m.workers[newTime][id] = wpCfg
 		m.workersByIntervals[id] = newTime
@@ -100,7 +100,7 @@ func (m *Manager) Start() {
 					// Reschedule the next worker
 					timeToWork := time.Now().Add(wpCfg.interval).Unix()
 					if m.workers[timeToWork] == nil {
-						m.workers[timeToWork] = make(map[int64]wpConfig)
+						m.workers[timeToWork] = make(map[int64]taskConfig)
 					}
 					m.workers[timeToWork][id] = wpCfg
 					m.workersByIntervals[id] = timeToWork
