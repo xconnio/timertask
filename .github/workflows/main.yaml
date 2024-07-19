@@ -1,4 +1,4 @@
-name: workerpool CI
+name: timertask CI
 
 on:
   push:

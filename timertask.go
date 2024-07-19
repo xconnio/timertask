@@ -1,4 +1,4 @@
-package workerpool
+package timertask
 
 import (
 	"log"
@@ -6,45 +6,45 @@ import (
 	"time"
 )
 
-type wpConfig struct {
+type taskConfig struct {
 	interval time.Duration
 	callback func() error
 }
 
-type WorkerPool struct {
-	workers            map[int64]map[int64]wpConfig
+type Manager struct {
+	workers            map[int64]map[int64]taskConfig
 	workersByIntervals map[int64]int64
 	mutex              sync.Mutex
 }
 
-// NewWorkerPool creates a new WorkerPool instance.
-func NewWorkerPool() *WorkerPool {
-	return &WorkerPool{
-		workers:            make(map[int64]map[int64]wpConfig),
+// NewManager creates a new Manager instance.
+func NewManager() *Manager {
+	return &Manager{
+		workers:            make(map[int64]map[int64]taskConfig),
 		workersByIntervals: make(map[int64]int64),
 	}
 }
 
-// Add registers a new worker.
-func (m *WorkerPool) Add(id int64, interval time.Duration, callback func() error) {
+// Schedule registers a new worker.
+func (m *Manager) Schedule(id int64, interval time.Duration, callback func() error) {
 	// Calculate the next worker time in seconds
 	timeToWork := time.Now().Add(interval).Unix()
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if m.workers[timeToWork] == nil {
-		m.workers[timeToWork] = make(map[int64]wpConfig)
+		m.workers[timeToWork] = make(map[int64]taskConfig)
 	}
 
-	m.workers[timeToWork][id] = wpConfig{
+	m.workers[timeToWork][id] = taskConfig{
 		interval: interval,
 		callback: callback,
 	}
 	m.workersByIntervals[id] = timeToWork
 }
 
-// Remove unregisters a worker.
-func (m *WorkerPool) Remove(id int64) {
+// Cancel unregisters a worker.
+func (m *Manager) Cancel(id int64) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -59,7 +59,7 @@ func (m *WorkerPool) Remove(id int64) {
 }
 
 // Reset reschedules the worker for a specific id.
-func (m *WorkerPool) Reset(id int64) {
+func (m *Manager) Reset(id int64) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -73,7 +73,7 @@ func (m *WorkerPool) Reset(id int64) {
 
 		newTime := time.Now().Add(wpCfg.interval).Unix()
 		if m.workers[newTime] == nil {
-			m.workers[newTime] = make(map[int64]wpConfig)
+			m.workers[newTime] = make(map[int64]taskConfig)
 		}
 		m.workers[newTime][id] = wpCfg
 		m.workersByIntervals[id] = newTime
@@ -81,7 +81,7 @@ func (m *WorkerPool) Reset(id int64) {
 }
 
 // Start begins the worker process.
-func (m *WorkerPool) Start() {
+func (m *Manager) Start() {
 	go func() {
 		for {
 			nowSeconds := time.Now().Unix()
@@ -93,14 +93,14 @@ func (m *WorkerPool) Start() {
 					err := wpCfg.callback()
 					if err != nil {
 						log.Printf("error pinging client: %v", err)
-						m.Remove(id)
+						m.Cancel(id)
 						continue
 					}
 
 					// Reschedule the next worker
 					timeToWork := time.Now().Add(wpCfg.interval).Unix()
 					if m.workers[timeToWork] == nil {
-						m.workers[timeToWork] = make(map[int64]wpConfig)
+						m.workers[timeToWork] = make(map[int64]taskConfig)
 					}
 					m.workers[timeToWork][id] = wpCfg
 					m.workersByIntervals[id] = timeToWork
