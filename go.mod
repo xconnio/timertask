@@ -1,4 +1,4 @@
-module github.com/xconnio/workerpool
+module github.com/xconnio/timertask
 
 go 1.19
 
