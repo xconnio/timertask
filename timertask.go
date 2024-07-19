@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+var sleepDuration = 1 * time.Second // nolint:gochecknoglobals
+var unixTimeNow = func() int64 {    // nolint:gochecknoglobals
+	return time.Now().Unix()
+}
+
 type taskConfig struct {
 	interval time.Duration
 	callback func() error
@@ -84,7 +89,7 @@ func (m *Manager) Reset(id int64) {
 func (m *Manager) Start() {
 	go func() {
 		for {
-			nowSeconds := time.Now().Unix()
+			nowSeconds := unixTimeNow()
 
 			m.mutex.Lock()
 			workers, ok := m.workers[nowSeconds]
@@ -110,7 +115,7 @@ func (m *Manager) Start() {
 			}
 			m.mutex.Unlock()
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(sleepDuration)
 		}
 	}()
 }
