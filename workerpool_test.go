@@ -9,67 +9,61 @@ import (
 	"github.com/xconnio/workerpool"
 )
 
-type mockClient struct {
-	messages []string
-}
-
-func (c *mockClient) Write(data []byte) error {
-	c.messages = append(c.messages, string(data))
-	return nil
-}
-
 func TestManager(t *testing.T) {
-	manager := workerpool.NewPingManager()
+	manager := workerpool.NewWorkerPool()
 
-	client1 := &mockClient{}
-	client2 := &mockClient{}
-
-	manager.Add(client1, 2*time.Second, func() []byte {
-		return []byte("ping")
+	messages1 := 0
+	manager.Add(1, 2*time.Second, func() error {
+		messages1++
+		return nil
 	})
-	manager.Add(client2, 1*time.Second, func() []byte {
-		return []byte("ping")
+
+	messages2 := 0
+	manager.Add(2, 1*time.Second, func() error {
+		messages2++
+		return nil
 	})
 
 	go manager.Start()
 
-	// Wait for ping
+	// Wait for worker
 	time.Sleep(3 * time.Second)
 
-	require.NotEmpty(t, client1.messages)
-	require.NotEmpty(t, client2.messages)
+	require.NotZero(t, messages1)
+	require.NotZero(t, messages2)
 
-	// Remove client1 and check
-	manager.Remove(client1)
+	// Remove worker1 and check
+	manager.Remove(1)
 	time.Sleep(3 * time.Second)
 
-	require.Len(t, client1.messages, 1)
+	require.Equal(t, messages1, 1)
 
-	require.Greater(t, len(client2.messages), 2)
+	require.Greater(t, messages2, 2)
 }
 
 func TestManagerReset(t *testing.T) {
-	manager := workerpool.NewPingManager()
+	manager := workerpool.NewWorkerPool()
 
-	client1 := &mockClient{}
-	manager.Add(client1, 2*time.Second, func() []byte {
-		return []byte("ping")
+	messages := 0
+	manager.Add(1, 2*time.Second, func() error {
+		messages++
+		return nil
 	})
 
 	go manager.Start()
 
-	// Wait for first ping
+	// Wait for first work
 	time.Sleep(3 * time.Second)
-	require.Len(t, client1.messages, 1)
+	require.Equal(t, 1, messages)
+
+	time.Sleep(900 * time.Millisecond)
+	// Reset worker1 and check work
+	manager.Reset(1)
 
 	time.Sleep(1 * time.Second)
-	// Reset client1 and check pings
-	manager.Reset(client1)
+	require.Equal(t, 1, messages)
 
-	time.Sleep(1 * time.Second)
-	require.Len(t, client1.messages, 1)
-
-	// Wait for another ping after reset
+	// Wait for another work after reset
 	time.Sleep(2 * time.Second)
-	require.Len(t, client1.messages, 2)
+	require.Equal(t, 2, messages)
 }

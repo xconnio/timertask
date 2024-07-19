@@ -6,111 +6,107 @@ import (
 	"time"
 )
 
-type Client interface {
-	Write(data []byte) error
-}
-
-type pingConfig struct {
+type wpConfig struct {
 	interval time.Duration
-	dataFunc func() []byte
+	callback func() error
 }
 
-type PingManager struct {
-	clients       map[int64]map[Client]pingConfig
-	clientPingMap map[Client]int64
-	mutex         sync.Mutex
+type WorkerPool struct {
+	workers            map[int64]map[int64]wpConfig
+	workersByIntervals map[int64]int64
+	mutex              sync.Mutex
 }
 
-// NewPingManager creates a new PingManager instance.
-func NewPingManager() *PingManager {
-	return &PingManager{
-		clients:       make(map[int64]map[Client]pingConfig),
-		clientPingMap: make(map[Client]int64),
+// NewWorkerPool creates a new WorkerPool instance.
+func NewWorkerPool() *WorkerPool {
+	return &WorkerPool{
+		workers:            make(map[int64]map[int64]wpConfig),
+		workersByIntervals: make(map[int64]int64),
 	}
 }
 
-// Add registers a client to be pinged.
-func (m *PingManager) Add(client Client, pingInterval time.Duration, dataFunc func() []byte) {
-	// Calculate the next ping time in seconds
-	timeToPing := time.Now().Add(pingInterval).Unix()
+// Add registers a new worker.
+func (m *WorkerPool) Add(id int64, interval time.Duration, callback func() error) {
+	// Calculate the next worker time in seconds
+	timeToWork := time.Now().Add(interval).Unix()
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	if m.clients[timeToPing] == nil {
-		m.clients[timeToPing] = make(map[Client]pingConfig)
+	if m.workers[timeToWork] == nil {
+		m.workers[timeToWork] = make(map[int64]wpConfig)
 	}
 
-	m.clients[timeToPing][client] = pingConfig{
-		interval: pingInterval,
-		dataFunc: dataFunc,
+	m.workers[timeToWork][id] = wpConfig{
+		interval: interval,
+		callback: callback,
 	}
-	m.clientPingMap[client] = timeToPing
+	m.workersByIntervals[id] = timeToWork
 }
 
-// Remove unregisters a client.
-func (m *PingManager) Remove(client Client) {
+// Remove unregisters a worker.
+func (m *WorkerPool) Remove(id int64) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	nextPingTime, ok := m.clientPingMap[client]
+	nexTime, ok := m.workersByIntervals[id]
 	if ok {
-		delete(m.clients[nextPingTime], client)
-		if len(m.clients[nextPingTime]) == 0 {
-			delete(m.clients, nextPingTime)
+		delete(m.workers[nexTime], id)
+		if len(m.workers[nexTime]) == 0 {
+			delete(m.workers, nexTime)
 		}
-		delete(m.clientPingMap, client)
+		delete(m.workersByIntervals, id)
 	}
 }
 
-// Reset reschedules the ping for a specific client.
-func (m *PingManager) Reset(client Client) {
+// Reset reschedules the worker for a specific id.
+func (m *WorkerPool) Reset(id int64) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	nextPingTime, ok := m.clientPingMap[client]
+	nextTime, ok := m.workersByIntervals[id]
 	if ok {
-		pingInfo := m.clients[nextPingTime][client]
-		delete(m.clients[nextPingTime], client)
-		if len(m.clients[nextPingTime]) == 0 {
-			delete(m.clients, nextPingTime)
+		wpCfg := m.workers[nextTime][id]
+		delete(m.workers[nextTime], id)
+		if len(m.workers[nextTime]) == 0 {
+			delete(m.workers, nextTime)
 		}
 
-		newPingTime := time.Now().Add(pingInfo.interval).Unix()
-		if m.clients[newPingTime] == nil {
-			m.clients[newPingTime] = make(map[Client]pingConfig)
+		newTime := time.Now().Add(wpCfg.interval).Unix()
+		if m.workers[newTime] == nil {
+			m.workers[newTime] = make(map[int64]wpConfig)
 		}
-		m.clients[newPingTime][client] = pingInfo
-		m.clientPingMap[client] = newPingTime
+		m.workers[newTime][id] = wpCfg
+		m.workersByIntervals[id] = newTime
 	}
 }
 
-// Start begins the pinging process.
-func (m *PingManager) Start() {
+// Start begins the worker process.
+func (m *WorkerPool) Start() {
 	go func() {
 		for {
 			nowSeconds := time.Now().Unix()
 
 			m.mutex.Lock()
-			clients, ok := m.clients[nowSeconds]
+			workers, ok := m.workers[nowSeconds]
 			if ok {
-				for client, pingCfg := range clients {
-					err := client.Write(pingCfg.dataFunc())
+				for id, wpCfg := range workers {
+					err := wpCfg.callback()
 					if err != nil {
 						log.Printf("error pinging client: %v", err)
-						m.Remove(client)
+						m.Remove(id)
 						continue
 					}
 
-					// Reschedule the next ping for the client
-					timeToPing := time.Now().Add(pingCfg.interval).Unix()
-					if m.clients[timeToPing] == nil {
-						m.clients[timeToPing] = make(map[Client]pingConfig)
+					// Reschedule the next worker
+					timeToWork := time.Now().Add(wpCfg.interval).Unix()
+					if m.workers[timeToWork] == nil {
+						m.workers[timeToWork] = make(map[int64]wpConfig)
 					}
-					m.clients[timeToPing][client] = pingCfg
-					m.clientPingMap[client] = timeToPing
+					m.workers[timeToWork][id] = wpCfg
+					m.workersByIntervals[id] = timeToWork
 
 				}
-				delete(m.clients, nowSeconds)
+				delete(m.workers, nowSeconds)
 			}
 			m.mutex.Unlock()
 
